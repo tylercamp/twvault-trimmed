@@ -199,6 +199,9 @@ namespace TW.Vault.Model.Native
 
         public static int CalculateTotalPopulation(JSON.Army armyCounts, params JSON.TroopType[] troopTypes)
         {
+            if (armyCounts == null)
+                return 0;
+
             int totalPopulation = 0;
             foreach (var kvp in armyCounts.Where(kvp => troopTypes.Length == 0 || troopTypes.Contains(kvp.Key)))
                 totalPopulation += kvp.Value * Population[kvp.Key];

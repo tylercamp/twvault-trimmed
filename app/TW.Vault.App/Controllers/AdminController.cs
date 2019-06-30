@@ -76,12 +76,12 @@ namespace TW.Vault.Controllers
                 if (log.Tx != null)
                 {
                     json.OccurredAt = log.Tx.OccurredAt;
-                    json.AdminUserName = userNamesById[log.Tx.Uid];
+                    json.AdminUserName = log.Tx.Uid == 0 ? "System" : userNamesById[log.Tx.Uid];
                 }
                 else
                 {
                     json.OccurredAt = log.TransactionTime;
-                    json.AdminUserName = log.AdminPlayerId == null ? "System" : (playerNamesById[log.AdminPlayerId.Value] ?? Translate("UNKNOWN"));
+                    json.AdminUserName = log.AdminPlayerId == null ? "System" : (playerNamesById.GetValueOrDefault(log.AdminPlayerId.Value) ?? Translate("UNKNOWN"));
                 }
 
                 var logsForKey = logsByKey[log.AuthToken].OrderBy(l => l.Id).ToList();
@@ -311,7 +311,7 @@ namespace TW.Vault.Controllers
                     select tribe
                 ).FirstOrDefaultAsync();
 
-            jsonUser.TribeName = playerTribe.TribeName.UrlDecode();
+            jsonUser.TribeName = playerTribe?.TribeName?.UrlDecode();
 
             return Ok(jsonUser);
         }
@@ -439,7 +439,7 @@ namespace TW.Vault.Controllers
 
 
         [HttpGet("summary")]
-        public async Task<IActionResult> GetTroopsSummary()
+        public async Task<IActionResult> GetTroopsSummary(int fangMinCats, int fangMaxPop)
         {
             //  Dear jesus this is such a mess
 
@@ -462,13 +462,11 @@ namespace TW.Vault.Controllers
                 join user in CurrentSets.User on player.PlayerId equals user.PlayerId
                 join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
                 join currentVillage in CurrentSets.CurrentVillage
-                                                             .Include(cv => cv.ArmyAtHome)
-                                                             .Include(cv => cv.ArmyOwned)
-                                                             .Include(cv => cv.ArmyTraveling)
                                     on village.VillageId equals currentVillage.VillageId
+                    into currentVillage
                 where user.Enabled && !user.IsReadOnly
                 where player.TribeId == CurrentTribeId || !Configuration.Security.RestrictAccessWithinTribes
-                select new { player, currentVillage, X = village.X.Value, Y = village.Y.Value }
+                select new { player, villageId = village.VillageId, currentVillage = currentVillage.FirstOrDefault(), X = village.X.Value, Y = village.Y.Value }
 
                 ,
 
@@ -501,9 +499,38 @@ namespace TW.Vault.Controllers
 
             );
 
+            // Need to load armies separately since `join into` doesn't work right with .Include()
+            var armyIds = tribeVillages
+                .Where(v => v.currentVillage != null)
+                .SelectMany(v => new[] {
+                    v.currentVillage.ArmyAtHomeId,
+                    v.currentVillage.ArmyOwnedId,
+                    v.currentVillage.ArmyRecentLossesId,
+                    v.currentVillage.ArmyStationedId,
+                    v.currentVillage.ArmySupportingId,
+                    v.currentVillage.ArmyTravelingId
+                })
+                .Where(id => id != null)
+                .Select(id => id.Value)
+                .ToList();
+
+            var allArmies = await context.CurrentArmy.Where(a => armyIds.Contains(a.ArmyId)).ToDictionaryAsync(a => a.ArmyId, a => a);
+            foreach (var village in tribeVillages.Where(v => v.currentVillage != null))
+            {
+                Scaffold.CurrentArmy FindArmy(long? armyId) => armyId == null ? null : allArmies.GetValueOrDefault(armyId.Value);
+
+                var cv = village.currentVillage;
+                cv.ArmyAtHome = FindArmy(cv.ArmyAtHomeId);
+                cv.ArmyOwned = FindArmy(cv.ArmyOwnedId);
+                cv.ArmyRecentLosses = FindArmy(cv.ArmyRecentLossesId);
+                cv.ArmyStationed = FindArmy(cv.ArmyStationedId);
+                cv.ArmySupporting = FindArmy(cv.ArmySupportingId);
+                cv.ArmyTraveling = FindArmy(cv.ArmyTravelingId);
+            }
+
             var currentPlayerIds = currentPlayers.Select(p => p.PlayerId).ToList();
 
-            var villageIds = tribeVillages.Select(v => v.currentVillage.VillageId).Distinct().ToList();
+            var villageIds = tribeVillages.Select(v => v.villageId).Distinct().ToList();
             var attackedVillageIds = await Profile("Get incomings", () => (
                     from command in CurrentSets.Command
                     where villageIds.Contains(command.TargetVillageId) && command.IsAttack && command.LandsAt > CurrentServerTime && !command.IsReturning
@@ -511,12 +538,14 @@ namespace TW.Vault.Controllers
                     select command.TargetVillageId
                 ).ToListAsync());
 
-            var attackingVillageIds = await Profile("Get attacks", () => (
-                    from command in CurrentSets.Command
+            var attackCommands = await Profile("Get attack details", () => (
+                    from command in CurrentSets.Command.Include(c => c.Army)
                     where villageIds.Contains(command.SourceVillageId) && command.IsAttack && command.LandsAt > CurrentServerTime
                     where command.TargetPlayerId != null
-                    select command.SourceVillageId
+                    select new { command.SourceVillageId, command.Army }
                 ).ToListAsync());
+
+            var attackingVillageIds = attackCommands.Select(c => c.SourceVillageId).ToList();
 
             var tribeIds = tribeVillages.Select(tv => tv.player.TribeId)
                                         .Where(tid => tid != null)
@@ -532,6 +561,7 @@ namespace TW.Vault.Controllers
                                             p => p,
                                             p => tribeVillages.Where(v => v.player == p)
                                                               .Select(tv => tv.currentVillage)
+                                                              .Where(cv => cv != null)
                                                               .ToList()
                                          );
 
@@ -551,12 +581,11 @@ namespace TW.Vault.Controllers
                                         );
 
             //  Get all support data for the tribe
-            var tribeVillageIds = tribeVillages.Select(v => v.currentVillage.VillageId).ToList();
-            //  'tribeVillageIds' tends to be large, so this will be a slow query
+            //  'villageIds' tends to be large, so this will be a slow query
             var villagesSupport = await (
                     from support in CurrentSets.CurrentVillageSupport
                                            .Include(s => s.SupportingArmy)
-                    where tribeVillageIds.Contains(support.SourceVillageId)
+                    where villageIds.Contains(support.SourceVillageId)
                     select support
                 ).ToListAsync();
             
@@ -566,12 +595,12 @@ namespace TW.Vault.Controllers
             var playersById = tribeVillages.Select(tv => tv.player).Distinct().ToDictionary(p => p.PlayerId, p => p);
 
             var tribeIdsByVillage = tribeVillages.ToDictionary(
-                v => v.currentVillage.VillageId,
+                v => v.villageId,
                 v => v.player.TribeId ?? -1
             );
 
             //  Get tribes being supported that are not from vault
-            var nonTribeVillageIds = villagesSupport.Select(s => s.TargetVillageId).Distinct().Except(tribeVillageIds).ToList();
+            var nonTribeVillageIds = villagesSupport.Select(s => s.TargetVillageId).Distinct().Except(villageIds).ToList();
 
             var nonTribeTargetTribesByVillageId = await (
                     from village in CurrentSets.Village
@@ -613,7 +642,8 @@ namespace TW.Vault.Controllers
 
             var numIncomingsByPlayer = new Dictionary<long, int>();
             var numAttacksByPlayer = new Dictionary<long, int>();
-            var villageOwnerIdById = tribeVillages.ToDictionary(v => v.currentVillage.VillageId, v => v.player.PlayerId);
+            var numAttackingFangsByPlayer = new Dictionary<long, int>();
+            var villageOwnerIdById = tribeVillages.ToDictionary(v => v.villageId, v => v.player.PlayerId);
 
             foreach (var target in attackedVillageIds)
             {
@@ -631,6 +661,22 @@ namespace TW.Vault.Controllers
                 numAttacksByPlayer[playerId]++;
             }
 
+            bool IsFang(JSON.Army army, bool ignorePop = false) =>
+                    army != null &&
+                    army.ContainsKey(JSON.TroopType.Catapult) &&
+                    army[JSON.TroopType.Catapult] >= fangMinCats &&
+                    (ignorePop || ArmyStats.CalculateTotalPopulation(army, ArmyStats.OffensiveTroopTypes) <= fangMaxPop);
+
+            foreach (var command in attackCommands)
+            {
+                var playerId = villageOwnerIdById[command.SourceVillageId];
+                if (!numAttackingFangsByPlayer.ContainsKey(playerId))
+                    numAttackingFangsByPlayer[playerId] = 0;
+
+                if (IsFang(command.Army))
+                    numAttackingFangsByPlayer[playerId]++;
+            }
+
             var villagesNearEnemy = new HashSet<long>();
             foreach (var village in tribeVillages)
             {
@@ -641,7 +687,7 @@ namespace TW.Vault.Controllers
                 });
 
                 if (nearbyEnemyVillage != null)
-                    villagesNearEnemy.Add(village.currentVillage.VillageId);
+                    villagesNearEnemy.Add(village.villageId);
             }
             
             var maxNoblesByPlayer = currentPlayers.ToDictionary(p => p.PlayerId, p => p.CurrentPossibleNobles);
@@ -675,7 +721,8 @@ namespace TW.Vault.Controllers
                     UploadedCommandsAt = playerHistory?.LastUploadedCommandsAt ?? new DateTime(),
                     NumNobles = playerVillages.Select(v => v.ArmyOwned?.Snob ?? 0).Sum(),
                     NumIncomings = numIncomingsByPlayer.GetValueOrDefault(player.PlayerId, 0),
-                    NumAttackCommands = numAttacksByPlayer.GetValueOrDefault(player.PlayerId, 0)
+                    NumAttackCommands = numAttacksByPlayer.GetValueOrDefault(player.PlayerId, 0),
+                    FangsTraveling = numAttackingFangsByPlayer.GetValueOrDefault(player.PlayerId, 0)
                 };
 
                 playerSummary.UploadAge = DateTime.UtcNow - playerSummary.UploadedAt;
@@ -689,6 +736,9 @@ namespace TW.Vault.Controllers
                     var armyOwned = ArmyConvert.ArmyToJson(village.ArmyOwned);
                     var armyTraveling = ArmyConvert.ArmyToJson(village.ArmyTraveling);
                     var armyAtHome = ArmyConvert.ArmyToJson(village.ArmyAtHome);
+
+                    if (IsFang(armyAtHome, true) && !ArmyStats.IsNuke(armyOwned, 0.75))
+                        playerSummary.FangsOwned++;
 
                     if (ArmyStats.IsOffensive(village.ArmyOwned))
                     {
@@ -704,8 +754,11 @@ namespace TW.Vault.Controllers
                             playerSummary.HalfNukesOwned++;
                         else if (ArmyStats.IsNuke(armyOwned, 0.25))
                             playerSummary.QuarterNukesOwned++;
+
                         if (ArmyStats.IsNuke(armyTraveling))
                             playerSummary.NukesTraveling++;
+                        else if (IsFang(armyTraveling))
+                            playerSummary.FangsTraveling++;
                     }
                     else
                     {

@@ -380,11 +380,11 @@ namespace TW.Vault.Controllers
                     }
 
                     var fullArmy = armySetJson.AtHome + armySetJson.Traveling + armySetJson.Supporting;
-                    currentVillage.ArmyOwned = ArmyConvert.JsonToArmy(fullArmy, CurrentWorldId, currentVillage.ArmyOwned, context);
-                    currentVillage.ArmyStationed = ArmyConvert.JsonToArmy(armySetJson.Stationed, CurrentWorldId, currentVillage.ArmyStationed, context);
-                    currentVillage.ArmyTraveling = ArmyConvert.JsonToArmy(armySetJson.Traveling, CurrentWorldId, currentVillage.ArmyTraveling, context);
-                    currentVillage.ArmyAtHome = ArmyConvert.JsonToArmy(armySetJson.AtHome, CurrentWorldId, currentVillage.ArmyAtHome, context);
-                    currentVillage.ArmySupporting = ArmyConvert.JsonToArmy(armySetJson.Supporting, CurrentWorldId, currentVillage.ArmySupporting, context);
+                    currentVillage.ArmyOwned = ArmyConvert.JsonToArmy(fullArmy, CurrentWorldId, currentVillage.ArmyOwned, context, emptyIfNull: true);
+                    currentVillage.ArmyStationed = ArmyConvert.JsonToArmy(armySetJson.Stationed, CurrentWorldId, currentVillage.ArmyStationed, context, emptyIfNull: true);
+                    currentVillage.ArmyTraveling = ArmyConvert.JsonToArmy(armySetJson.Traveling, CurrentWorldId, currentVillage.ArmyTraveling, context, emptyIfNull: true);
+                    currentVillage.ArmyAtHome = ArmyConvert.JsonToArmy(armySetJson.AtHome, CurrentWorldId, currentVillage.ArmyAtHome, context, emptyIfNull: true);
+                    currentVillage.ArmySupporting = ArmyConvert.JsonToArmy(armySetJson.Supporting, CurrentWorldId, currentVillage.ArmySupporting, context, emptyIfNull: true);
 
 
                     currentVillage.ArmyOwned.LastUpdated = DateTime.UtcNow;
@@ -579,7 +579,7 @@ namespace TW.Vault.Controllers
                         village.ArmyOwned,
                         village.ArmyTraveling,
                         village.ArmyStationed
-                    }.Where(a => a.LastUpdated != null && !ArmyConvert.ArmyToJson(a).IsEmpty()).ToList();
+                    }.Where(a => a?.LastUpdated != null && !ArmyConvert.ArmyToJson(a).IsEmpty()).ToList();
 
                     bool IsNuke(Scaffold.CurrentArmy army)
                     {

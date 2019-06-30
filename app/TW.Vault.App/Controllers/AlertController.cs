@@ -292,7 +292,7 @@ namespace TW.Vault.Controllers
                     from currentVillage in CurrentSets.CurrentVillage
                     join village in CurrentSets.Village on currentVillage.VillageId equals village.VillageId
                     where !CurrentSets.ActiveUser.Any(au => au.PlayerId == village.PlayerId)
-                    select new { X = village.X.Value, Y = village.Y.Value, village.VillageId, currentVillage.Loyalty, currentVillage.LoyaltyLastUpdated, currentVillage.ArmyStationed, village.PlayerId, VillageName = village.VillageName.UrlDecode(), PlayerName = village.Player.PlayerName.UrlDecode() }
+                    select new { X = village.X.Value, Y = village.Y.Value, village.VillageId, village.Points, currentVillage.Loyalty, currentVillage.LoyaltyLastUpdated, currentVillage.ArmyStationed, village.PlayerId, VillageName = village.VillageName.UrlDecode(), PlayerName = village.Player.PlayerName.UrlDecode() }
                 );
 
                 var villageMap = new Features.Spatial.Quadtree(villasWithNobles);
@@ -313,7 +313,7 @@ namespace TW.Vault.Controllers
                         var loyaltyConfidence = 1.0f - (possibleLoyalty - 50) / 50.0f;
                         var stackConfidence = 1.0f - (stationedDVs - 0.75f) / 0.75f;
 
-                        if (v.ArmyStationed.LastUpdated != null)
+                        if (v.ArmyStationed?.LastUpdated != null)
                         {
                             var stackAge = serverTime - v.ArmyStationed.LastUpdated.Value;
                             var ageFactor = (TimeSpan.FromHours(48) - stackAge) / TimeSpan.FromHours(48);
@@ -328,7 +328,7 @@ namespace TW.Vault.Controllers
                         {
                             Loyalty = possibleLoyalty,
                             StationedDVs = stationedDVs,
-                            DVsSeenAt = v.ArmyStationed.LastUpdated,
+                            DVsSeenAt = v.ArmyStationed?.LastUpdated,
                             Confidence = loyaltyConfidence + stackConfidence,
                             Village = v
                         };
@@ -344,6 +344,7 @@ namespace TW.Vault.Controllers
                         t.Village.VillageName,
                         t.Village.PlayerId,
                         t.Village.PlayerName,
+                        t.Village.Points,
                         t.Loyalty,
                         t.StationedDVs,
                         t.DVsSeenAt,

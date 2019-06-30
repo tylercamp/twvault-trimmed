@@ -1054,6 +1054,7 @@ namespace TW.Vault.Scaffold
                 entity.Property(e => e.Name).IsRequired().HasColumnName("name");
                 entity.Property(e => e.IsTwNative).HasDefaultValue(false).IsRequired().HasColumnName("is_tw_native");
                 entity.Property(e => e.Group).IsRequired().HasColumnName("group");
+                entity.Property(e => e.Note).HasDefaultValue(null).HasColumnName("note");
             });
 
             modelBuilder.Entity<TranslationLanguage>(entity =>
@@ -1305,6 +1306,8 @@ namespace TW.Vault.Scaffold
             {
                 entity.ToTable("world", "tw_provided");
 
+                entity.HasData(Seed.WorldData.Contents);
+
                 entity.Property(e => e.Id)
                     .HasColumnName("id")
                     .HasDefaultValueSql("nextval('tw_provided.world_id_seq'::regclass)");
@@ -1323,6 +1326,10 @@ namespace TW.Vault.Scaffold
                     .IsRequired()
                     .HasColumnName("default_translation_id");
 
+                entity.Property(e => e.IsBeta)
+                    .IsRequired()
+                    .HasColumnName("is_beta");
+
                 entity.HasOne(e => e.DefaultTranslation)
                     .WithMany(e => e.DefaultWorlds)
                     .HasForeignKey(e => e.DefaultTranslationId)
@@ -1335,6 +1342,8 @@ namespace TW.Vault.Scaffold
                 entity.HasKey(e => e.WorldId);
 
                 entity.ToTable("world_settings", "tw_provided");
+
+                entity.HasData(Seed.WorldSettingsData.Contents);
 
                 entity.Property(e => e.WorldId)
                     .HasColumnName("world_id")
