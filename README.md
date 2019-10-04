@@ -7,9 +7,12 @@ twvault is no longer being actively developed beyond bugfixes for major issues. 
 
 # Getting Started
 Requirements:
+
 - Visual Studio
 - dotnet core 2.2 SDK
+
 Optional:
+
 - Docker
 - bash shell (eg git bash)
 
