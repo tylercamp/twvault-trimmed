@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -15,9 +16,9 @@ using TW.Vault.Features;
 
 namespace TW.Vault.MapDataFetcher
 {
-    public class DataFetchingService : BackgroundService
+    public class DataFetchingService : TW.Vault.Features.BackgroundService
     {
-        public DataFetchingService(IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, IApplicationLifetime applicationLifetime) : base(scopeFactory, loggerFactory)
+        public DataFetchingService(IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, IHostApplicationLifetime applicationLifetime) : base(scopeFactory, loggerFactory)
         {
             Instance = this;
             this.applicationLifetime = applicationLifetime;
@@ -28,7 +29,7 @@ namespace TW.Vault.MapDataFetcher
         private bool forceReApply = false;
         private FetchJobStats pendingStats = null;
         private DateTime lastCheckedAt = DateTime.MinValue;
-        private IApplicationLifetime applicationLifetime;
+        private IHostApplicationLifetime applicationLifetime;
 
         public FetchJobStats LatestStats { get; private set; } = null;
 
@@ -167,7 +168,7 @@ namespace TW.Vault.MapDataFetcher
                                 if (stoppingToken.IsCancellationRequested)
                                     break;
                             }
-                            catch (TaskCanceledException e) { }
+                            catch (TaskCanceledException) { }
                             catch (Exception e)
                             {
                                 logger.LogWarning("An exception occurred while processing for {world}/id={id}: {exception}", job.WorldName, job.WorldId, e);
@@ -525,7 +526,7 @@ namespace TW.Vault.MapDataFetcher
         {
             var maxAge = TimeSpan.FromHours(1);
             var cachingPath = FileCachingPath;
-            var worlds = context.World.ToList();
+            var worlds = context.World.Where(w => !w.IsPendingDeletion).ToList();
             return worlds.Select(w => new FetchingJob(w, cachingPath)).Where(j => forceReApply || j.NeedsRefresh).ToList();
         }
     }

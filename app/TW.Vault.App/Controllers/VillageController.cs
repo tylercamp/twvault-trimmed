@@ -82,7 +82,7 @@ namespace TW.Vault.Controllers
             );
 
             var validationInfo = UploadRestrictionsValidate.ValidateInfo.FromMapRestrictions(CurrentUser, uploadHistory);
-            List<String> needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(DateTime.UtcNow, validationInfo);
+            List<String> needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(CurrentServerTime, validationInfo);
 
             if (needsUpdateReasons != null && needsUpdateReasons.Any())
             {
@@ -91,36 +91,33 @@ namespace TW.Vault.Controllers
 
             //  Start getting village data
 
-            var (currentVillage, commandsToVillage, latestConquerTimestamp) = await ManyTasks.Run(
-                Profile("Get current village", () => (
-                    from cv in CurrentSets.CurrentVillage
-                                        .Include(v => v.ArmyAtHome)
-                                        .Include(v => v.ArmyOwned)
-                                        .Include(v => v.ArmyStationed)
-                                        .Include(v => v.ArmyTraveling)
-                                        .Include(v => v.ArmyRecentLosses)
-                                        .Include(v => v.CurrentBuilding)
-                    where cv.VillageId == villageId
-                    select cv
-                ).FirstOrDefaultAsync()),
+            var currentVillage = await Profile("Get current village", () => (
+                from cv in CurrentSets.CurrentVillage
+                                    .Include(v => v.ArmyAtHome)
+                                    .Include(v => v.ArmyOwned)
+                                    .Include(v => v.ArmyStationed)
+                                    .Include(v => v.ArmyTraveling)
+                                    .Include(v => v.ArmyRecentLosses)
+                                    .Include(v => v.CurrentBuilding)
+                where cv.VillageId == villageId
+                select cv
+            ).FirstOrDefaultAsync());
 
-                Profile("Get commands to village", () => (
-                    from command in CurrentSets.Command
-                                               .Include(c => c.Army)
-                    where command.TargetVillageId == villageId
-                    where !command.IsReturning
-                    where command.LandsAt > CurrentServerTime
-                    select command
-                ).ToListAsync()),
+            var commandsToVillage = await Profile("Get commands to village", () => (
+                from command in CurrentSets.Command
+                                            .Include(c => c.Army)
+                where command.TargetVillageId == villageId
+                where !command.IsReturning
+                where command.LandsAt > CurrentServerTime
+                select command
+            ).ToListAsync());
 
-                Profile("Get latest conquer", () => (
-                    from conquer in CurrentSets.Conquer
-                    where conquer.VillageId == villageId
-                    orderby conquer.UnixTimestamp descending
-                    select conquer.UnixTimestamp
-                ).FirstOrDefaultAsync())
-            );
-            
+            var latestConquerTimestamp = await Profile("Get latest conquer", () => (
+                from conquer in CurrentSets.Conquer
+                where conquer.VillageId == villageId
+                orderby conquer.UnixTimestamp descending
+                select conquer.UnixTimestamp
+            ).FirstOrDefaultAsync());
             
             var jsonData = new JSON.VillageData();
 
@@ -310,24 +307,22 @@ namespace TW.Vault.Controllers
 
             var villageIds = currentArmySetJson.TroopData.Select(a => a.VillageId.Value).ToList();
 
-            var (scaffoldCurrentVillages, villagesWithPlayerIds) = await ManyTasks.Run(
-                Profile("Get existing scaffold current villages", () => (
-                    from cv in CurrentSets.CurrentVillage
-                                          .Include(v => v.ArmyOwned)
-                                          .Include(v => v.ArmyAtHome)
-                                          .Include(v => v.ArmyStationed)
-                                          .Include(v => v.ArmySupporting)
-                                          .Include(v => v.ArmyTraveling)
-                    where villageIds.Contains(cv.VillageId)
-                    select cv
-                ).ToListAsync())
-                ,
-                Profile("Get village player IDs", () => (
-                    from v in CurrentSets.Village
-                    where villageIds.Contains(v.VillageId)
-                    select new { v.PlayerId, v.VillageId }
-                ).ToListAsync())
-            );
+            var scaffoldCurrentVillages = await Profile("Get existing scaffold current villages", () => (
+                from cv in CurrentSets.CurrentVillage
+                                        .Include(v => v.ArmyOwned)
+                                        .Include(v => v.ArmyAtHome)
+                                        .Include(v => v.ArmyStationed)
+                                        .Include(v => v.ArmySupporting)
+                                        .Include(v => v.ArmyTraveling)
+                where villageIds.Contains(cv.VillageId)
+                select cv
+            ).ToListAsync());
+
+            var villagesWithPlayerIds = await Profile("Get village player IDs", () => (
+                from v in CurrentSets.Village
+                where villageIds.Contains(v.VillageId)
+                select new { v.PlayerId, v.VillageId }
+            ).ToListAsync());
 
             var villageIdsByPlayerId = villagesWithPlayerIds.ToDictionary(v => v.VillageId, v => v.PlayerId);
 
@@ -387,11 +382,11 @@ namespace TW.Vault.Controllers
                     currentVillage.ArmySupporting = ArmyConvert.JsonToArmy(armySetJson.Supporting, CurrentWorldId, currentVillage.ArmySupporting, context, emptyIfNull: true);
 
 
-                    currentVillage.ArmyOwned.LastUpdated = DateTime.UtcNow;
-                    currentVillage.ArmyStationed.LastUpdated = DateTime.UtcNow;
-                    currentVillage.ArmyTraveling.LastUpdated = DateTime.UtcNow;
-                    currentVillage.ArmyAtHome.LastUpdated = DateTime.UtcNow;
-                    currentVillage.ArmySupporting.LastUpdated = DateTime.UtcNow;
+                    currentVillage.ArmyOwned.LastUpdated = CurrentServerTime;
+                    currentVillage.ArmyStationed.LastUpdated = CurrentServerTime;
+                    currentVillage.ArmyTraveling.LastUpdated = CurrentServerTime;
+                    currentVillage.ArmyAtHome.LastUpdated = CurrentServerTime;
+                    currentVillage.ArmySupporting.LastUpdated = CurrentServerTime;
                 }
             });
 
@@ -403,7 +398,7 @@ namespace TW.Vault.Controllers
             //  Run upload history update in separate query to prevent creating multiple history
             //  entries
             var userUploadHistory = await EFUtil.GetOrCreateUserUploadHistory(context, CurrentUserId);
-            userUploadHistory.LastUploadedTroopsAt = DateTime.UtcNow;
+            userUploadHistory.LastUploadedTroopsAt = CurrentServerTime;
             await context.SaveChangesAsync();
 
             return Ok();
@@ -417,7 +412,7 @@ namespace TW.Vault.Controllers
 
             var uploadHistory = await context.UserUploadHistory.Where(u => u.Uid == CurrentUserId).FirstOrDefaultAsync();
             var validationInfo = UploadRestrictionsValidate.ValidateInfo.FromMapRestrictions(CurrentUser, uploadHistory);
-            var needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(DateTime.UtcNow, validationInfo);
+            var needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(CurrentServerTime, validationInfo);
 
             if (needsUpdateReasons != null && needsUpdateReasons.Any())
             {
@@ -486,7 +481,7 @@ namespace TW.Vault.Controllers
         {
             var uploadHistory = await context.UserUploadHistory.Where(u => u.Uid == CurrentUserId).FirstOrDefaultAsync();
             var validationInfo = UploadRestrictionsValidate.ValidateInfo.FromMapRestrictions(CurrentUser, uploadHistory);
-            var needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(DateTime.UtcNow, validationInfo);
+            var needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(CurrentServerTime, validationInfo);
 
             if (needsUpdateReasons != null && needsUpdateReasons.Any())
             {
@@ -513,7 +508,9 @@ namespace TW.Vault.Controllers
                 join player in CurrentSets.Player on village.PlayerId equals player.PlayerId
                 where CurrentUserIsAdmin || player.TribeId == null || !vaultTribes.Contains(player.TribeId.Value)
 
-                where village.X >= x && village.Y >= y && village.X <= x + width && village.Y <= y + height
+                // Right now we're not doing lazy-loading of data in the script, so this is just a potentially-costly
+                // and pointless calculation.
+                //where village.X >= x && village.Y >= y && village.X <= x + width && village.Y <= y + height
                 select new { CurrentVillage = currentVillage, player.PlayerId, player.TribeId }
             ).ToListAsync());
 
@@ -527,16 +524,32 @@ namespace TW.Vault.Controllers
             var validVillages = villageData.Where(vd => vd.PlayerId != CurrentPlayerId).ToList();
             var validVillageIds = villageData.Select(d => d.CurrentVillage.VillageId).ToList();
 
-            var commandData = await Profile("Get command data", () => (
-                from command in CurrentSets.Command.FromWorld(CurrentWorldId)
-                where command.IsReturning && command.ReturnsAt > CurrentServerTime && command.ArmyId != null
-                select new { command.SourceVillageId, command.Army }
+            var returningCommandData = await Profile("Get returning command data", () => (
+                from command in CurrentSets.Command
+                where command.ReturnsAt > CurrentServerTime && command.ArmyId != null && command.IsReturning
+                select new { command.SourceVillageId, command.TargetVillageId, command.Army }
             ).ToListAsync());
 
-            var commandsByVillageId = validVillageIds.ToDictionary(id => id, id => new List<Scaffold.CommandArmy>());
-            foreach (var command in commandData.Where(cmd => commandsByVillageId.ContainsKey(cmd.SourceVillageId)))
-                commandsByVillageId[command.SourceVillageId].Add(command.Army);
-            
+            var sendingCommandData = await Profile("Get sent command data", () => (
+                from command in CurrentSets.Command
+                where command.ReturnsAt > CurrentServerTime && command.ArmyId != null && !command.IsReturning
+                select new { command.SourceVillageId, command.TargetVillageId, command.Army }
+            ).ToListAsync());
+
+            var returningCommandsBySourceVillageId = validVillageIds.ToDictionary(id => id, id => new List<Scaffold.CommandArmy>());
+            foreach (var command in returningCommandData)
+            {
+                if (returningCommandsBySourceVillageId.ContainsKey(command.SourceVillageId))
+                    returningCommandsBySourceVillageId[command.SourceVillageId].Add(command.Army);
+            }
+
+            var commandsByTargetVillageId = validVillageIds.ToDictionary(id => id, id => new List<Scaffold.CommandArmy>());
+            foreach (var command in sendingCommandData)
+            {
+                if (commandsByTargetVillageId.ContainsKey(command.TargetVillageId))
+                    commandsByTargetVillageId[command.TargetVillageId].Add(command.Army);
+            }
+
             var result = new Dictionary<long, JSON.VillageTags>();
 
             var tribeIds = validVillages.Select(vv => vv.TribeId).Where(t => t != null).Select(t => t.Value).Distinct();
@@ -563,25 +576,7 @@ namespace TW.Vault.Controllers
                     tag.WatchtowerLevel = data.CurrentVillage.CurrentBuilding?.Watchtower;
                     tag.WatchtowerSeenAt = data.CurrentVillage.CurrentBuilding?.LastUpdated;
 
-                    tag.ReturningTroopsPopulation = commandsByVillageId[data.CurrentVillage.VillageId].Sum((army) => ArmyStats.CalculateTotalPopulation(ArmyConvert.ArmyToJson(army)));
-
-                    if (village.ArmyStationed?.LastUpdated != null)
-                    {
-                        // 1 DV is approx. 1.7m total defense power
-                        var stationed = village.ArmyStationed;
-                        var defensePower = BattleSimulator.TotalDefensePower(ArmyConvert.ArmyToJson(stationed));
-                        tag.IsStacked = defensePower > 1.7e6;
-                        tag.StackDVs = defensePower / (float)1.7e6;
-                        tag.StackSeenAt = village.ArmyStationed.LastUpdated;
-                    }
-
-                    var validArmies = new[] {
-                        village.ArmyOwned,
-                        village.ArmyTraveling,
-                        village.ArmyStationed
-                    }.Where(a => a?.LastUpdated != null && !ArmyConvert.ArmyToJson(a).IsEmpty()).ToList();
-
-                    bool IsNuke(Scaffold.CurrentArmy army)
+                    bool IsNuke(Scaffold.IScaffoldArmy army)
                     {
                         var jsonArmy = ArmyConvert.ArmyToJson(army);
                         if (BattleSimulator.TotalAttackPower(jsonArmy) < 3.5e5)
@@ -601,6 +596,25 @@ namespace TW.Vault.Controllers
                             return ArmyStats.CalculateTotalPopulation(jsonArmy, TroopType.Axe, TroopType.Light, TroopType.Marcher) > 13000;
                         }
                     }
+
+                    tag.ReturningTroopsPopulation = returningCommandsBySourceVillageId[data.CurrentVillage.VillageId].Sum((army) => ArmyStats.CalculateTotalPopulation(ArmyConvert.ArmyToJson(army)));
+                    tag.NumTargettingNukes = commandsByTargetVillageId[data.CurrentVillage.VillageId].Count(army => IsNuke(army));
+
+                    if (village.ArmyStationed?.LastUpdated != null)
+                    {
+                        // 1 DV is approx. 1.7m total defense power
+                        var stationed = village.ArmyStationed;
+                        var defensePower = BattleSimulator.TotalDefensePower(ArmyConvert.ArmyToJson(stationed));
+                        tag.IsStacked = defensePower > 1.7e6;
+                        tag.StackDVs = defensePower / (float)1.7e6;
+                        tag.StackSeenAt = village.ArmyStationed.LastUpdated;
+                    }
+
+                    var validArmies = new[] {
+                        village.ArmyOwned,
+                        village.ArmyTraveling,
+                        village.ArmyStationed
+                    }.Where(a => a?.LastUpdated != null && !ArmyConvert.ArmyToJson(a).IsEmpty()).ToList();
 
                     var nukeArmy = (
                             from army in validArmies

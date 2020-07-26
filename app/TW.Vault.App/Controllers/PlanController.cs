@@ -98,7 +98,7 @@ namespace TW.Vault.Controllers
                         MaximumTime = command.ReturnsAt.Value - serverTime
                     });
 
-                    planner.Requirements.Add(Planning.Requirements.MinimumOffenseRequirement.HalfNuke.LimitTroopType(offensiveTypes));
+                    planner.Requirements.Add(Planning.Requirements.MinimumOffenseRequirement.FractionalNuke(0.05f).LimitTroopType(offensiveTypes));
                     planner.Requirements.Add(Planning.Requirements.WithoutTroopTypeRequirement.WithoutNobles);
 
                     var plan = planner.GenerateOptions(ownVillages, command.SourceVillage);

@@ -26,7 +26,7 @@ namespace TW.Vault.Controllers
 
         private const String ScriptsBasePath = "";
 
-        public ScriptController(IHostingEnvironment environment, IServiceScopeFactory scopeFactory, VaultContext context, ILoggerFactory loggerFactory) : base(context, scopeFactory, loggerFactory)
+        public ScriptController(IWebHostEnvironment environment, IServiceScopeFactory scopeFactory, VaultContext context, ILoggerFactory loggerFactory) : base(context, scopeFactory, loggerFactory)
         {
             asputil = new ASPUtil(environment, ScriptsBasePath);
         }
@@ -111,11 +111,11 @@ namespace TW.Vault.Controllers
         [HttpGet("{*name}", Name = "GetCompiledObfuscatedScript")]
         public IActionResult GetCompiledObfuscated(String name)
         {
-            var allowedPublicScripts = Configuration.Security.PublicScripts;
-            if (Configuration.Security.EnableScriptFilter)
+            if (asputil.UseProductionScripts)
             {
-                if (allowedPublicScripts.Contains(name))
-                    return Content(ResolveFileContents(name), "application/json");
+                var contents = ResolveFileContents(name);
+                if (contents != null)
+                    return Content(contents, "application/javascript");
                 else
                     return NotFound();
             }
@@ -129,8 +129,6 @@ namespace TW.Vault.Controllers
             if (notFoundString != null)
                 return NotFound();
 
-            //var minified = Uglify.Js(scriptContents).Code;
-            //return Content(minified, "application/json");
             return Content(scriptContents, "application/javascript");
         }
 
@@ -216,16 +214,13 @@ namespace TW.Vault.Controllers
             if (String.IsNullOrWhiteSpace(name))
                 return null;
 
-            if (Configuration.Initialization.EnableRequiredFiles)
+            if (asputil.UseProductionScripts)
             {
-                foreach (var externalFile in Configuration.Initialization.RequiredFiles)
-                {
-                    var fileName = Path.GetFileName(externalFile);
-                    if (name == fileName)
-                        return System.IO.File.ReadAllText(Path.GetFullPath(Path.Combine(asputil.HostingEnvironment.WebRootPath, externalFile)));
-                }
-
-                throw new FileNotFoundException("Could not find required file: " + name);
+                var path = asputil.GetObfuscatedPath(name);
+                if (System.IO.File.Exists(path))
+                    return System.IO.File.ReadAllText(path);
+                else
+                    return null;
             }
 
             var resolvedPath = asputil.GetFilePath(name);
@@ -239,9 +234,11 @@ namespace TW.Vault.Controllers
         private String MakeCompiled(String name, Action<String> onError, Action<String> onNotFound)
         {
             var scriptCompiler = new Features.ScriptCompiler();
+            scriptCompiler.InitCommonVars();
 
             List<String> failedFiles = new List<string>();
 
+            List<String> missingCVars = new List<string>();
             IEnumerable<String> circularDependencyChain = null;
             scriptCompiler.DependencyResolver = (fileName) =>
             {
@@ -251,8 +248,15 @@ namespace TW.Vault.Controllers
                 return contents;
             };
             scriptCompiler.OnCircularDependency += (chain) => circularDependencyChain = new[] { name }.Concat(chain);
+            scriptCompiler.OnMissingCVar += (varname) => missingCVars.Add(varname);
 
             String scriptContents = scriptCompiler.Compile(name);
+
+            if (missingCVars.Count > 0)
+            {
+                onError?.Invoke("Error compiling script due to missing CVar values for: " + String.Join(", ", missingCVars));
+                return null;
+            }
 
             if (circularDependencyChain != null)
             {

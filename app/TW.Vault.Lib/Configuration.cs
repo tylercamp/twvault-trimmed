@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,6 +28,17 @@ namespace TW.Vault
                 }
 
                 return cachedRoot;
+            }
+        }
+
+        public static void Require(params String[] keys)
+        {
+            var missing = keys.Where(k => Instance[k] == null || Instance[k].Trim().Length == 0).ToList();
+            if (missing.Any())
+            {
+                var summary = String.Join("\n", missing.Select(k => $"- {k}"));
+                var msg = $"Required configuration values are missing:\n{summary}";
+                throw new Exception(msg);
             }
         }
 
@@ -118,10 +130,7 @@ namespace TW.Vault
 
         public short MinimumRequiredPriveleges { get; set; }
 
-        public bool UseEncryption { get; set; } = true;
-
-        public bool EnableScriptFilter { get; set; }
-        public List<String> PublicScripts { get; set; }
+        public bool ForceEnableObfuscatedScripts { get; set; }
 
         public Guid? ForcedKey { get; set; }
         public long? ForcedPlayerId { get; set; }
@@ -152,8 +161,8 @@ namespace TW.Vault
     
     public class InitializationConfiguration
     {
-        public bool EnableRequiredFiles { get; set; }
-        public List<String> RequiredFiles { get; set; }
+        public String ScriptCompilationOutputPath { get; set; } = "obfuscated";
+        public String ServerHostname { get; set; } = "v.tylercamp.me";
     }
 
     public class RankingsConfiguration

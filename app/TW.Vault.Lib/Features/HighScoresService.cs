@@ -85,7 +85,7 @@ namespace TW.Vault.Features
                         }
                     });
 
-                    await ManyTasks.RunThrottled(updateTasks).ConfigureAwait(false);
+                    await ManyTasks.RunThrottled(4, updateTasks).ConfigureAwait(false);
 
                     IsUpdating = false;
                 }
@@ -143,101 +143,78 @@ namespace TW.Vault.Features
 
             logger.LogDebug("Running data queries...");
 
-            (var tribePlayers, var tribeVillas, var tribeSupport, var tribeAttackCommands, var tribeSupportCommands, var tribeAttackingReports, var tribeDefendingReports, var enemyVillas) = await ManyTasks.Run(
-                (
-                    from user in CurrentSets.ActiveUser
-                    join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
-                    select new { player.PlayerName, player.PlayerId }
-                ).ToListAsync(ct)
+            var tribePlayers = await (
+                from user in CurrentSets.ActiveUser
+                join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
+                select new { player.PlayerName, player.PlayerId }
+            ).ToListAsync(ct);
 
-                ,
+            var tribeVillas = await (
+                from user in CurrentSets.ActiveUser
+                join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
+                join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
+                join currentVillage in CurrentSets.CurrentVillage
+                    on village.VillageId equals currentVillage.VillageId
+                where currentVillage.ArmyAtHomeId != null && currentVillage.ArmyTravelingId != null
+                select new { X = village.X.Value, Y = village.Y.Value, player.PlayerId, village.VillageId, currentVillage.ArmyAtHome, currentVillage.ArmyTraveling }
+            ).ToListAsync(ct);
 
-                // At-home armies
-                (
-                    from user in CurrentSets.ActiveUser
-                    join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
-                    join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
-                    join currentVillage in CurrentSets.CurrentVillage
-                        on village.VillageId equals currentVillage.VillageId
-                    where currentVillage.ArmyAtHomeId != null && currentVillage.ArmyTravelingId != null
-                    select new { X = village.X.Value, Y = village.Y.Value, player.PlayerId, village.VillageId, currentVillage.ArmyAtHome, currentVillage.ArmyTraveling }
-                ).ToListAsync(ct)
+            var tribeSupport = await (
+                from user in CurrentSets.ActiveUser
+                join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
+                join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
+                join support in CurrentSets.CurrentVillageSupport
+                    on village.VillageId equals support.SourceVillageId
+                select new { player.PlayerId, support.TargetVillageId, support.SupportingArmy }
+            ).ToListAsync(ct);
 
-                ,
+            var tribeAttackCommands = await (
+                from user in CurrentSets.ActiveUser
+                join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
+                join command in CurrentSets.Command on player.PlayerId equals command.SourcePlayerId
+                where command.ArmyId != null
+                where command.LandsAt > lastWeek
+                where command.IsAttack
+                where command.TargetPlayerId != null
+                select new { command.CommandId, command.SourcePlayerId, command.LandsAt, command.TargetVillageId, command.Army }
+            ).ToListAsync(ct);
 
-                // Support
-                (
-                    from user in CurrentSets.ActiveUser
-                    join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
-                    join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
-                    join support in CurrentSets.CurrentVillageSupport
-                        on village.VillageId equals support.SourceVillageId
-                    select new { player.PlayerId, support.TargetVillageId, support.SupportingArmy }
-                ).ToListAsync(ct)
+            var tribeSupportCommands = await (
+                from user in CurrentSets.ActiveUser
+                join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
+                join command in CurrentSets.Command on player.PlayerId equals command.SourcePlayerId
+                where command.ArmyId != null
+                where command.LandsAt > lastWeek
+                where !command.IsAttack
+                where command.TargetPlayerId != null
+                select new SlimSupportCommand { SourcePlayerId = command.SourcePlayerId, TargetPlayerId = command.TargetPlayerId.Value, TargetVillageId = command.TargetVillageId, LandsAt = command.LandsAt }
+            ).ToListAsync(ct);
 
-                ,
+            var tribeAttackingReports = await (
+                from user in CurrentSets.ActiveUser
+                join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
+                join report in CurrentSets.Report on player.PlayerId equals report.AttackerPlayerId
+                where report.OccuredAt > lastWeek
+                where report.AttackerArmy != null
+                where report.DefenderPlayerId != null
+                select new SlimReport { AttackerArmy = report.AttackerArmy, ReportId = report.ReportId, OccuredAt = report.OccuredAt, AttackerPlayerId = report.AttackerPlayerId.Value, DefenderVillageId = report.DefenderVillageId }
+            ).ToListAsync(ct);
 
-                // Commands in last week
-                (
-                    from user in CurrentSets.ActiveUser
-                    join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
-                    join command in CurrentSets.Command on player.PlayerId equals command.SourcePlayerId
-                    where command.ArmyId != null
-                    where command.LandsAt > lastWeek
-                    where command.IsAttack
-                    where command.TargetPlayerId != null
-                    select new { command.CommandId, command.SourcePlayerId, command.LandsAt, command.TargetVillageId, command.Army }
-                ).ToListAsync(ct)
+            var tribeDefendingReports = await (
+                from user in CurrentSets.ActiveUser
+                join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
+                join report in CurrentSets.Report on player.PlayerId equals report.DefenderPlayerId
+                where report.OccuredAt > lastWeek
+                where report.AttackerArmy != null
+                select new SlimReport { AttackerArmy = report.AttackerArmy, DefenderVillageId = report.DefenderVillageId, ReportId = report.ReportId, OccuredAt = report.OccuredAt }
+            ).ToListAsync(ct);
 
-                ,
-
-                // Support commands in last week
-                (
-                    from user in CurrentSets.ActiveUser
-                    join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
-                    join command in CurrentSets.Command on player.PlayerId equals command.SourcePlayerId
-                    where command.ArmyId != null
-                    where command.LandsAt > lastWeek
-                    where !command.IsAttack
-                    where command.TargetPlayerId != null
-                    select new SlimSupportCommand { SourcePlayerId = command.SourcePlayerId, TargetPlayerId = command.TargetPlayerId.Value, TargetVillageId = command.TargetVillageId, LandsAt = command.LandsAt }
-                ).ToListAsync(ct)
-
-                ,
-
-                // Attacking reports in last week
-                (
-                    from user in CurrentSets.ActiveUser
-                    join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
-                    join report in CurrentSets.Report on player.PlayerId equals report.AttackerPlayerId
-                    where report.OccuredAt > lastWeek
-                    where report.AttackerArmy != null
-                    where report.DefenderPlayerId != null
-                    select new SlimReport { AttackerArmy = report.AttackerArmy, ReportId = report.ReportId, OccuredAt = report.OccuredAt, AttackerPlayerId = report.AttackerPlayerId.Value, DefenderVillageId = report.DefenderVillageId }
-                ).ToListAsync(ct)
-
-                ,
-
-                // Defending reports in last week
-                (
-                    from user in CurrentSets.ActiveUser
-                    join player in CurrentSets.Player on user.PlayerId equals player.PlayerId
-                    join report in CurrentSets.Report on player.PlayerId equals report.DefenderPlayerId
-                    where report.OccuredAt > lastWeek
-                    where report.AttackerArmy != null
-                    select new SlimReport { AttackerArmy = report.AttackerArmy, DefenderVillageId = report.DefenderVillageId, ReportId = report.ReportId, OccuredAt = report.OccuredAt }
-                ).ToListAsync(ct)
-
-                ,
-
-                // Enemy villas (to determine what's "backline")
-                (
-                    from enemy in CurrentSets.EnemyTribe
-                    join player in CurrentSets.Player on enemy.EnemyTribeId equals player.TribeId
-                    join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
-                    select new { X = village.X.Value, Y = village.Y.Value }
-                ).ToListAsync(ct)
-            ).ConfigureAwait(false);
+            var enemyVillas = await (
+                from enemy in CurrentSets.EnemyTribe
+                join player in CurrentSets.Player on enemy.EnemyTribeId equals player.TribeId
+                join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
+                select new { X = village.X.Value, Y = village.Y.Value }
+            ).ToListAsync(ct);
 
             if (ct.IsCancellationRequested)
                 return null;

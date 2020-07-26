@@ -112,7 +112,7 @@ namespace TW.Vault.Controllers
         public async Task<IActionResult> SetUserFinishedCommandUploads()
         {
             var history = await EFUtil.GetOrCreateUserUploadHistory(context, CurrentUserId);
-            history.LastUploadedCommandsAt = DateTime.UtcNow;
+            history.LastUploadedCommandsAt = CurrentServerTime;
             await context.SaveChangesAsync();
             return Ok();
         }
@@ -121,7 +121,7 @@ namespace TW.Vault.Controllers
         public async Task<IActionResult> SetUserFinishedIncomingUploads()
         {
             var history = await EFUtil.GetOrCreateUserUploadHistory(context, CurrentUserId);
-            history.LastUploadedIncomingsAt = DateTime.UtcNow;
+            history.LastUploadedIncomingsAt = CurrentServerTime;
             await context.SaveChangesAsync();
             return Ok();
         }
@@ -140,36 +140,44 @@ namespace TW.Vault.Controllers
                                 .Select(id => id.Value)
                                 .Distinct();
 
+                var allCurrentVillageIds = await CurrentSets.CurrentVillage.Where(v => allVillageIds.Contains(v.VillageId)).Select(v => v.VillageId).ToListAsync();
+                var allVillagesMissingCurrentEntries = allVillageIds.Except(allCurrentVillageIds).ToList();
+                if (allVillagesMissingCurrentEntries.Count > 0)
+                {
+                    foreach (var id in allVillagesMissingCurrentEntries)
+                        context.Add(new CurrentVillage
+                        {
+                            VillageId = id,
+                            AccessGroupId = CurrentAccessGroupId,
+                            WorldId = CurrentWorldId
+                        });
+
+                    await context.SaveChangesAsync();
+                }
+
                 var villageIdsFromCommandsMissingTroopType = jsonCommands.Commands
                     .Where(c => c.TroopType == null)
                     .SelectMany(c => new[] { c.SourceVillageId, c.TargetVillageId })
                     .Distinct()
                     .ToList();
 
-                var (scaffoldCommands, villageIdsFromCommandsMissingTroopTypes, allVillages) = await ManyTasks.Run(
-                    Profile("Get existing commands", () => (
-                        from command in CurrentSets.Command.IncludeCommandData()
-                        where commandIds.Contains(command.CommandId)
-                        select command
-                    ).ToListAsync())
-                    
-                    ,
+                var scaffoldCommands = await Profile("Get existing commands", () => (
+                    from command in CurrentSets.Command.IncludeCommandData()
+                    where commandIds.Contains(command.CommandId)
+                    select command
+                ).ToListAsync());
 
-                    Profile("Get villages for commands missing troop type", () => (
-                        from village in CurrentSets.Village
-                        where villageIdsFromCommandsMissingTroopType.Contains(village.VillageId)
-                        select village
-                    ).ToListAsync())
+                var villageIdsFromCommandsMissingTroopTypes = await Profile("Get villages for commands missing troop type", () => (
+                    from village in CurrentSets.Village
+                    where villageIdsFromCommandsMissingTroopType.Contains(village.VillageId)
+                    select village
+                ).ToListAsync());
 
-                    ,
-
-                    Profile("Get all relevant villages", () => (
-                        from village in CurrentSets.Village
-                        where allVillageIds.Contains(village.VillageId)
-                        select village
-                    ).ToListAsync())
-                );
-                
+                var allVillages = await Profile("Get all relevant villages", () => (
+                    from village in CurrentSets.Village
+                    where allVillageIds.Contains(village.VillageId)
+                    select village
+                ).ToListAsync());
 
                 var mappedScaffoldCommands = scaffoldCommands.ToDictionary(c => c.CommandId, c => c);
                 var villagesById = allVillages.ToDictionary(v => v.VillageId, v => v);
@@ -233,7 +241,7 @@ namespace TW.Vault.Controllers
                             scaffoldCommand = new Scaffold.Command();
                             scaffoldCommand.World = CurrentWorld;
                             scaffoldCommand.AccessGroupId = CurrentAccessGroupId;
-                            jsonCommand.ToModel(CurrentWorldId, CurrentAccessGroupId, scaffoldCommand, context);
+                            jsonCommand.ToModel(CurrentWorldId, CurrentAccessGroupId, scaffoldCommand, CurrentServerTime, context);
                             context.Command.Add(scaffoldCommand);
                         }
                         else
@@ -248,7 +256,7 @@ namespace TW.Vault.Controllers
                                 });
                             }
 
-                            jsonCommand.ToModel(CurrentWorldId, CurrentAccessGroupId, scaffoldCommand, context);
+                            jsonCommand.ToModel(CurrentWorldId, CurrentAccessGroupId, scaffoldCommand, CurrentServerTime, context);
                         }
 
                         if (String.IsNullOrWhiteSpace(scaffoldCommand.UserLabel) || scaffoldCommand.UserLabel == "Attack")
@@ -270,9 +278,9 @@ namespace TW.Vault.Controllers
                 //  entries
                 var userUploadHistory = await EFUtil.GetOrCreateUserUploadHistory(context, CurrentUserId);
                 if (jsonCommands.IsOwnCommands.Value)
-                    userUploadHistory.LastUploadedCommandsAt = DateTime.UtcNow;
+                    userUploadHistory.LastUploadedCommandsAt = CurrentServerTime;
                 else
-                    userUploadHistory.LastUploadedIncomingsAt = DateTime.UtcNow;
+                    userUploadHistory.LastUploadedIncomingsAt = CurrentServerTime;
 
                 await context.SaveChangesAsync();
 
@@ -342,7 +350,7 @@ namespace TW.Vault.Controllers
             );
 
             var validationInfo = UploadRestrictionsValidate.ValidateInfo.FromTaggingRestrictions(CurrentUser, uploadHistory);
-            List<String> needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(DateTime.UtcNow, validationInfo);
+            List<String> needsUpdateReasons = UploadRestrictionsValidate.GetNeedsUpdateReasons(CurrentServerTime, validationInfo);
 
             if (needsUpdateReasons != null && needsUpdateReasons.Any())
             {
@@ -362,35 +370,27 @@ namespace TW.Vault.Controllers
 
             var sourcePlayerIds = relevantVillages.Values.Where(v => commandSourceVillageIds.Contains(v.VillageId)).Select(v => v.PlayerId ?? 0).ToList();
 
-            (var vaultOwnedVillages, var sourcePlayerNames, var countsByVillage) = await ManyTasks.Run(
-                //  Don't do any tagging for villages owned by players registered with the vault (so players in other tribes
-                //  also using the vault can't infer villa builds)
-                Profile("Get villages owned by vault users", () => (
-                    from user in CurrentSets.User
-                    join village in CurrentSets.Village on user.PlayerId equals village.PlayerId
-                    where user.Enabled
-                    select village.VillageId
-                ).ToListAsync())
+            //  Don't do any tagging for villages owned by players registered with the vault (so players in other tribes
+            //  also using the vault can't infer villa builds)
+            var vaultOwnedVillages = await Profile("Get villages owned by vault users", () => (
+                from user in CurrentSets.User
+                join village in CurrentSets.Village on user.PlayerId equals village.PlayerId
+                where user.Enabled
+                select village.VillageId
+            ).ToListAsync());
 
-                ,
+            var sourcePlayerNames = await Profile("Get player names", () => (
+                from player in CurrentSets.Player
+                where sourcePlayerIds.Contains(player.PlayerId)
+                select new { player.PlayerId, player.PlayerName }
+            ).ToDictionaryAsync(p => p.PlayerId, p => p.PlayerName));
 
-                Profile("Get player names", () => (
-                    from player in CurrentSets.Player
-                    where sourcePlayerIds.Contains(player.PlayerId)
-                    select new { player.PlayerId, player.PlayerName }
-                ).ToDictionaryAsync(p => p.PlayerId, p => p.PlayerName))
-
-                ,
-
-                Profile("Get command counts", () => (
-                    from command in CurrentSets.Command
-                    where !command.IsReturning && command.LandsAt > CurrentServerTime
-                    group command by command.SourceVillageId into villageCommands
-                    select new { VillageId = villageCommands.Key, Count = villageCommands.Count() }
-                ).ToDictionaryAsync(vc => vc.VillageId, vc => vc.Count))
-
-            );
-            
+            var countsByVillage = await Profile("Get command counts", () => (
+                from command in CurrentSets.Command
+                where !command.IsReturning && command.LandsAt > CurrentServerTime
+                group command by command.SourceVillageId into villageCommands
+                select new { VillageId = villageCommands.Key, Count = villageCommands.Count() }
+            ).ToDictionaryAsync(vc => vc.VillageId, vc => vc.Count));
 
             var travelCalculator = new Features.Simulation.TravelCalculator(CurrentWorldSettings.GameSpeed, CurrentWorldSettings.UnitSpeed);
             DateTime CommandLaunchedAt(Scaffold.Command command) => command.LandsAt - travelCalculator.CalculateTravelTime(
@@ -399,7 +399,7 @@ namespace TW.Vault.Controllers
                 relevantVillages[command.TargetVillageId].X, relevantVillages[command.TargetVillageId].Y
             );
 
-            var earliestLaunchTime = incomingData.Select(inc => CommandLaunchedAt(inc.Command)).DefaultIfEmpty(DateTime.UtcNow).Min();
+            var earliestLaunchTime = incomingData.Select(inc => CommandLaunchedAt(inc.Command)).DefaultIfEmpty(CurrentServerTime).Min();
 
             var commandsReturningByVillageId = await Profile("Process returning commands for all source villages", async () =>
             {
@@ -620,7 +620,7 @@ namespace TW.Vault.Controllers
                 MaximumTime = command.ReturnsAt.Value - CurrentServerTime
             });
 
-            planner.Requirements.Add(MinimumOffenseRequirement.HalfNuke);
+            planner.Requirements.Add(MinimumOffenseRequirement.QuarterNuke);
 
             var instructions = Profile("Generate plan", () => planner.GenerateOptions(
                 availableVillages.ToDictionary(cv => cv.Village, cv => cv),

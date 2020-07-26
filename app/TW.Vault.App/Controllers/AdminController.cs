@@ -455,9 +455,9 @@ namespace TW.Vault.Controllers
 
             //  This is a mess because of different classes for Player, CurrentPlayer, etc
 
-            var (tribeVillages, currentPlayers, uploadHistory, enemyVillages) = await ManyTasks.RunToList(
-                //  Get all CurrentVillages from the user's tribe - list of (Player, CurrentVillage)
-                //  (This returns a lot of data and will be slow)
+            //  Get all CurrentVillages from the user's tribe - list of (Player, CurrentVillage)
+            //  (This returns a lot of data and will be slow)
+            var tribeVillages = await (
                 from player in CurrentSets.Player
                 join user in CurrentSets.User on player.PlayerId equals user.PlayerId
                 join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
@@ -467,9 +467,9 @@ namespace TW.Vault.Controllers
                 where user.Enabled && !user.IsReadOnly
                 where player.TribeId == CurrentTribeId || !Configuration.Security.RestrictAccessWithinTribes
                 select new { player, villageId = village.VillageId, currentVillage = currentVillage.FirstOrDefault(), X = village.X.Value, Y = village.Y.Value }
+            ).ToListAsync();
 
-                ,
-
+            var currentPlayers = await (
                 //  Get all CurrentPlayer data for the user's tribe (separate from global 'Player' table
                 //      so we can also output stats for players that haven't uploaded anything yet)
                 from currentPlayer in CurrentSets.CurrentPlayer
@@ -478,9 +478,9 @@ namespace TW.Vault.Controllers
                 where user.Enabled && !user.IsReadOnly
                 where player.TribeId == CurrentTribeId || !Configuration.Security.RestrictAccessWithinTribes
                 select currentPlayer
-                
-                ,
+            ).ToListAsync();
 
+            var uploadHistory = await (
                 //  Get user upload history
                 from history in context.UserUploadHistory
                 join user in CurrentSets.User on history.Uid equals user.Uid
@@ -488,16 +488,15 @@ namespace TW.Vault.Controllers
                 where player.TribeId == CurrentTribeId || !Configuration.Security.RestrictAccessWithinTribes
                 where user.Enabled && !user.IsReadOnly
                 select new { playerId = player.PlayerId, history }
+            ).ToListAsync();
 
-                ,
-
+            var enemyVillages = await (
                 //  Get enemy villages
                 from tribe in CurrentSets.EnemyTribe
                 join player in CurrentSets.Player on tribe.EnemyTribeId equals player.TribeId
                 join village in CurrentSets.Village on player.PlayerId equals village.PlayerId
                 select new { village.VillageId, X = village.X.Value, Y = village.Y.Value }
-
-            );
+            ).ToListAsync();
 
             // Need to load armies separately since `join into` doesn't work right with .Include()
             var armyIds = tribeVillages
@@ -725,7 +724,7 @@ namespace TW.Vault.Controllers
                     FangsTraveling = numAttackingFangsByPlayer.GetValueOrDefault(player.PlayerId, 0)
                 };
 
-                playerSummary.UploadAge = DateTime.UtcNow - playerSummary.UploadedAt;
+                playerSummary.UploadAge = CurrentServerTime - playerSummary.UploadedAt;
 
                 if (maxNoblesByPlayer.ContainsKey(player.PlayerId))
                     playerSummary.MaxPossibleNobles = maxNoblesByPlayer[player.PlayerId];

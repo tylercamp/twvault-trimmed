@@ -103,10 +103,8 @@ namespace TW.Vault.Controllers
                     currentBatchSize = maxBatchSize;
 
                 var currentBatch = reportIds.Skip(i * maxBatchSize).Take(currentBatchSize).ToList();
-                (var existingBatchReports, var existingIgnoredBatchReports) = await ManyTasks.RunToList(
-                        CurrentSets.Report.Where(r => currentBatch.Contains(r.ReportId)).Select(r => r.ReportId),
-                        CurrentSets.IgnoredReport.Where(r => currentBatch.Contains(r.ReportId)).Select(r => r.ReportId)
-                    );
+                var existingBatchReports = await CurrentSets.Report.Where(r => currentBatch.Contains(r.ReportId)).Select(r => r.ReportId).ToListAsync();
+                var existingIgnoredBatchReports = await CurrentSets.IgnoredReport.Where(r => currentBatch.Contains(r.ReportId)).Select(r => r.ReportId).ToListAsync();
 
                 existingReports.AddRange(existingBatchReports);
                 existingReports.AddRange(existingIgnoredBatchReports);
@@ -119,7 +117,7 @@ namespace TW.Vault.Controllers
         public async Task<IActionResult> SetUserFinishedReportUploads()
         {
             var history = await EFUtil.GetOrCreateUserUploadHistory(context, CurrentUserId);
-            history.LastUploadedReportsAt = DateTime.UtcNow;
+            history.LastUploadedReportsAt = CurrentServerTime;
             await context.SaveChangesAsync();
             return Ok();
         }
@@ -130,10 +128,8 @@ namespace TW.Vault.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            (var previousIgnoredReports, var previousReports) = await ManyTasks.RunToList(
-                    CurrentSets.IgnoredReport.Where(r => reportIds.Contains(r.ReportId)).Select(r => r.ReportId),
-                    CurrentSets.Report.Where(r => reportIds.Contains(r.ReportId)).Select(r => r.ReportId)
-                );
+            var previousIgnoredReports = await CurrentSets.IgnoredReport.Where(r => reportIds.Contains(r.ReportId)).Select(r => r.ReportId).ToListAsync();
+            var previousReports = await CurrentSets.Report.Where(r => reportIds.Contains(r.ReportId)).Select(r => r.ReportId).ToListAsync();
 
             var reportsToIgnore = reportIds
                 .Except(previousIgnoredReports)
@@ -154,7 +150,7 @@ namespace TW.Vault.Controllers
             await context.SaveChangesAsync();
 
             var history = await EFUtil.GetOrCreateUserUploadHistory(context, CurrentUserId);
-            history.LastUploadedReportsAt = DateTime.UtcNow;
+            history.LastUploadedReportsAt = CurrentServerTime;
             await context.SaveChangesAsync();
 
             return Ok();
@@ -301,7 +297,7 @@ namespace TW.Vault.Controllers
                                 command.WorldId = CurrentWorldId;
                                 command.AccessGroupId = CurrentAccessGroupId;
                                 command.IsReturning = true;
-                                command.FirstSeenAt = DateTime.UtcNow;
+                                command.FirstSeenAt = CurrentServerTime;
                                 command.IsAttack = true;
                                 command.SourcePlayerId = jsonReport.AttackingPlayerId.Value;
                                 command.TargetPlayerId = jsonReport.DefendingPlayerId;
@@ -389,7 +385,7 @@ namespace TW.Vault.Controllers
                 //  Run upload history update in separate query to prevent creating multiple history
                 //  entries
                 var userUploadHistory = await EFUtil.GetOrCreateUserUploadHistory(context, CurrentUserId);
-                userUploadHistory.LastUploadedReportsAt = DateTime.UtcNow;
+                userUploadHistory.LastUploadedReportsAt = CurrentServerTime;
                 await context.SaveChangesAsync();
 
                 return Ok();

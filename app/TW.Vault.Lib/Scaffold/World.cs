@@ -30,6 +30,7 @@ namespace TW.Vault.Scaffold
         public string Hostname { get; set; }
         public short DefaultTranslationId { get; set; }
         public bool IsBeta { get; set; }
+        public bool IsPendingDeletion { get; set; }
         
         public TranslationRegistry DefaultTranslation { get; set; }
         public WorldSettings WorldSettings { get; set; }
@@ -41,6 +42,7 @@ namespace TW.Vault.Scaffold
         public ICollection<CurrentPlayer> CurrentPlayer { get; set; }
         public ICollection<CurrentVillage> CurrentVillage { get; set; }
         public ICollection<CurrentVillageSupport> CurrentVillageSupport { get; set; }
+        public ICollection<EnemyTribe> EnemyTribe { get; set; }
         public ICollection<Player> Player { get; set; }
         public ICollection<Report> Report { get; set; }
         public ICollection<ReportArmy> ReportArmy { get; set; }

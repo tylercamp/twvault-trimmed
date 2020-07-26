@@ -127,6 +127,7 @@
             {
                 name: "Spear",
                 canonicalName: 'spear',
+                itlCode: 'UNIT_SPEAR',
                 shorthand: "sp",
                 class: "Infantry",
                 attack: 10,
@@ -142,6 +143,7 @@
             {
                 name: "Sword",
                 canonicalName: 'sword',
+                itlCode: 'UNIT_SWORD',
                 shorthand: 'sw',
                 class: "Infantry",
                 attack: 25,
@@ -157,6 +159,7 @@
             {
                 name: "Axe",
                 canonicalName: 'axe',
+                itlCode: 'UNIT_AXE',
                 shorthand: 'axe',
                 class: "Infantry",
                 attack: 40,
@@ -172,6 +175,7 @@
             {
                 name: "Archer",
                 canonicalName: 'archer',
+                itlCode: 'UNIT_ARCHER',
                 shorthand: 'ar',
                 class: "Archer",
                 attack: 15,
@@ -187,6 +191,7 @@
             {
                 name: "Scout",
                 canonicalName: 'spy',
+                itlCode: 'UNIT_SPY',
                 shorthand: 'sc',
                 class: "Cavalry",
                 attack: 0,
@@ -202,6 +207,7 @@
             {
                 name: "Light Cav.",
                 canonicalName: 'light',
+                itlCode: 'UNIT_LIGHT_CAV',
                 shorthand: 'lc',
                 class: "Cavalry",
                 attack: 130,
@@ -217,6 +223,7 @@
             {
                 name: "Mounted Ar.",
                 canonicalName: 'marcher',
+                itlCode: 'UNIT_M_ARCHER',
                 shorthand: 'ma',
                 class: "Archer",
                 attack: 120,
@@ -232,6 +239,7 @@
             {
                 name: "Heavy Cav.",
                 canonicalName: 'heavy',
+                itlCode: 'UNIT_HEAVY_CAV',
                 shorthand: 'hc',
                 class: "Cavalry",
                 attack: 150,
@@ -247,6 +255,7 @@
             {
                 name: "Ram",
                 canonicalName: 'ram',
+                itlCode: 'UNIT_RAM',
                 shorthand: 'ram',
                 class: "Infantry",
                 attack: 2,
@@ -262,6 +271,7 @@
             {
                 name: "Catapult",
                 canonicalName: 'catapult',
+                itlCode: 'UNIT_CATAPULT',
                 shorthand: 'cat',
                 class: "Infantry",
                 attack: 100,
@@ -277,6 +287,7 @@
             {
                 name: "Paladin",
                 canonicalName: 'knight',
+                itlCode: 'UNIT_PALADIN',
                 shorthand: 'pally',
                 class: "Infantry",
                 attack: 150,
@@ -291,6 +302,7 @@
             {
                 name: "Nobleman",
                 canonicalName: 'snob',
+                itlCode: 'UNIT_NOBLE',
                 shorthand: 'noble',
                 class: "Infantry",
                 attack: 30,
@@ -306,6 +318,7 @@
             {
                 name: "Militia",
                 canonicalName: 'militia',
+                itlCode: 'UNIT_MILITIA',
                 shorthand: 'militia',
                 class: "Infantry",
                 attack: 0,
