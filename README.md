@@ -22,9 +22,11 @@ to start the whole application
 docker-compuse up -d
 ```
 
-to start only the database
+If you only want the database with all the tables
 ```bash
 docker-compuse up -d db
+cd app/TW.Vault.Migration
+dotnet run "{Insert connectionstring}"
 ```
 
 You can change the ports and connections string in the `docker-compose.yml` file
