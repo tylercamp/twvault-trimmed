@@ -55,6 +55,7 @@ namespace TW.Vault.MapDataFetcher
             {
                 app.UseDeveloperExceptionPage();
             }
+            app.UseRouting();
 
             app.UseCors("AllOrigins");
 
@@ -64,7 +65,6 @@ namespace TW.Vault.MapDataFetcher
                 RequireHeaderSymmetry = false
             });
 
-            app.UseRouting();
             app.UseEndpoints(e => e.MapControllers());
         }
     }
