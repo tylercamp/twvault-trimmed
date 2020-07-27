@@ -1,0 +1,34 @@
+version: "3.4"
+services:
+  app:
+    build:
+      context: ./app
+      target: TW.Vault.App
+    ports:
+      - "5001:5000"
+    depends_on:
+      - db
+    environment:
+      ConnectionStrings__Vault: "Server=db; Port=5432; Database=vault; User Id=u_vault; Password=vaulttest;"
+      
+  manage:
+    build:
+      context: ./app
+      target: TW.Vault.Manage
+    ports:
+      - "5030:5030"
+    depends_on:
+      - db
+    environment:
+      ConnectionStrings__Vault: "Server=db; Port=5432; Database=vault; User Id=u_vault; Password=vaulttest;"
+      CaptchaSecretKey: ""
+      CaptchaSiteKey: ""
+
+  db:
+    image: postgres:10
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: "u_vault"
+      POSTGRES_PASSWORD: "vaulttest"
+      POSTGRES_DB: "vault"

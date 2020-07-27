@@ -9,32 +9,39 @@ twvault is no longer being actively developed beyond bugfixes for major issues. 
 Requirements:
 
 - Visual Studio
-<<<<<<< HEAD
 - dotnet core 3.1 SDK
-=======
-- dotnet core 2.2 SDK
->>>>>>> 358584d8b0768564604e5544a2a4f8b9b87f4fc9
 
 Optional:
 
 - Docker
+- Docker-compose
 - bash shell (eg git bash)
 
-Use the resources in the `docker` folder of this repository to set up a local copy of the vault database.
+to start the whole application
+```bash
+docker-compuse up -d
+```
+
+If you only want the database with all the tables
+```bash
+docker-compuse up -d db
+cd app/TW.Vault.Migration
+dotnet run "{Insert connectionstring}"
+```
+
+You can change the ports and connections string in the `docker-compose.yml` file
 
 **This repository has not been extensively tested beyond being able to start the web server.** There may be small errors when using the script itself; open an issue and I'll address them as they appear.
+
 
 # Project Overview
 
 ## TW.ConfigurationFetcher
-<<<<<<< HEAD
 A tool for automatically fetching config info for Tribal Wars game servers and storing in Vault DB.
 
 ## TW.Vault.Manage
 Public web interface for generating a new script from the vault.
-=======
-A WIP tool for automatically fetching config info for Tribal Wars game servers. Not extensively tested and not actively being used.
->>>>>>> 358584d8b0768564604e5544a2a4f8b9b87f4fc9
+
 
 ## TW.Testing
 A tool for miscellaneous testing of different features. Not intended to actually be used. Can be checked as a reference for how to use some different utilities in the project.
