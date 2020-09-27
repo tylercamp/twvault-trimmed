@@ -9,11 +9,7 @@ twvault is no longer being actively developed beyond bugfixes for major issues. 
 Requirements:
 
 - Visual Studio
-<<<<<<< HEAD
 - dotnet core 3.1 SDK
-=======
-- dotnet core 2.2 SDK
->>>>>>> 358584d8b0768564604e5544a2a4f8b9b87f4fc9
 
 Optional:
 
@@ -27,14 +23,10 @@ Use the resources in the `docker` folder of this repository to set up a local co
 # Project Overview
 
 ## TW.ConfigurationFetcher
-<<<<<<< HEAD
 A tool for automatically fetching config info for Tribal Wars game servers and storing in Vault DB.
 
 ## TW.Vault.Manage
 Public web interface for generating a new script from the vault.
-=======
-A WIP tool for automatically fetching config info for Tribal Wars game servers. Not extensively tested and not actively being used.
->>>>>>> 358584d8b0768564604e5544a2a4f8b9b87f4fc9
 
 ## TW.Testing
 A tool for miscellaneous testing of different features. Not intended to actually be used. Can be checked as a reference for how to use some different utilities in the project.
